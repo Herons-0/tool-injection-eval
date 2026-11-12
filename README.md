@@ -88,7 +88,7 @@ The rule this project follows: *a verifier only counts if it can fail.*
 
 ## Running it
 
-You need Python 3.10+, Docker (Docker Desktop on Windows or macOS), and an API key for the model you want to test.
+You need Python 3.11+, Docker (Docker Desktop on Windows or macOS), and an API key for the model you want to test.
 
 ```bash
 git clone https://github.com/Herons-0/tool-injection-eval
