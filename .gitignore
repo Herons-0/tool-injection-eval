@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+
+# Inspect run logs: summarise them into results/ instead of committing raw logs
+logs/
+
+# Secrets
+.env

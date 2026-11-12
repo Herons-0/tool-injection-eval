@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tool-injection-eval"
+version = "0.1.0"
+description = "Indirect prompt-injection eval for tool-using LLM agents, with a deterministic grader that is itself tested."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    # Pinned: Inspect moves fast, and results should be reproducible.
+    "inspect-ai==0.3.289",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tool_injection_eval = ["sandbox/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["docker: end-to-end tests that start real Docker sandboxes (set RUN_DOCKER_TESTS=1)"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

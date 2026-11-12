@@ -1,0 +1,15 @@
+# One container per sample, created and torn down by Inspect.
+services:
+  default:
+    build:
+      context: .
+      args:
+        # Override with TIE_BASE_IMAGE if you need a mirror or a pre-pulled image.
+        BASE_IMAGE: ${TIE_BASE_IMAGE:-debian:bookworm-slim}
+    init: true
+    # The "email" and "web" are files in the sandbox, so nothing needs a network.
+    network_mode: none
+    working_dir: /workspace
+    command: tail -f /dev/null
+    mem_limit: 256m
+    cpus: 0.5
