@@ -11,8 +11,10 @@ dist/
 .pytest_cache/
 .ruff_cache/
 
-# Inspect run logs: summarise them into results/ instead of committing raw logs
+# Inspect run logs. Only the logs behind the published results are committed.
 logs/
+logs_incomplete/
+!results/logs/
 
 # Secrets
 .env
