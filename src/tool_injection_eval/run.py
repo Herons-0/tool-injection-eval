@@ -218,7 +218,7 @@ def run_model(
     rounds: int,
     out: Path,
     *,
-    sandbox: str | None,
+    sandbox: str,
     display: str,
     check: Callable[[str], str],
     status: Status,
@@ -234,12 +234,12 @@ def run_model(
                     break
                 status(f"{label}: running {name}")
                 (log,) = inspect_eval(
-                    tool_injection(defense=defense),
+                    tool_injection(defense=defense, sandbox=sandbox),
                     model=model,
                     epochs=1,
-                    sandbox=sandbox,
                     log_dir=str(log_dir),
                     display=display,
+                    log_level="error",  # hide harmless platform warnings from the console
                     fail_on_error=FAIL_AFTER,
                     retry_on_error=1,
                     max_retries=MAX_RETRIES,
@@ -265,7 +265,7 @@ def run_rounds(
     rounds: int,
     out: Path,
     *,
-    sandbox: str | None = "local",
+    sandbox: str = "local",
     display: str = "rich",
     check: Callable[[str], str] = probe,
 ) -> str:
@@ -284,7 +284,7 @@ def run_rounds(
         fallback = model_name(models[index + 1]) if index + 1 < len(models) else None
         verdict = check(name)
         if verdict == "ok" or verdict == "rate-limited":
-            status(f"Model: {name} (sandbox: {sandbox or 'docker'}, {rounds} round(s))")
+            status(f"Model: {name} (sandbox: {sandbox}, {rounds} round(s))")
             verdict = run_model(
                 model,
                 rounds,
@@ -365,7 +365,7 @@ def main(argv: list[str] | None = None) -> int:
             models,
             args.rounds,
             out,
-            sandbox="local" if args.sandbox == "local" else None,
+            sandbox=args.sandbox,
             display=args.display,
         )
     except Exception as exc:

@@ -52,6 +52,8 @@ def test_unknown_split_or_defense_is_rejected():
         build_samples("train")
     with pytest.raises(ValueError):
         tool_injection(defense="magic")
+    with pytest.raises(ValueError):
+        tool_injection(sandbox="vm")
 
 
 def test_each_sample_has_a_unique_canary_that_only_lives_in_env():

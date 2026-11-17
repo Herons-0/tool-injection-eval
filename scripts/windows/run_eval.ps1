@@ -18,7 +18,7 @@
 # terminating errors under "Stop", so check exit codes explicitly instead.
 $ErrorActionPreference = "Continue"
 $here = $PSScriptRoot
-Set-Location $here
+Push-Location $here
 $statusFile = Join-Path $here "STATUS.txt"
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
@@ -33,6 +33,7 @@ function Status([string]$msg) {
 function Fail([string]$msg) {
   Status "FAILED: $msg"
   Stop-Transcript | Out-Null
+  Pop-Location
   exit 1
 }
 
@@ -126,4 +127,5 @@ $code = $LASTEXITCODE
 $last = Get-Content $statusFile -Tail 1
 if ($last -notmatch "  (DONE|PAUSED|FAILED)") { Status "STOPPED: the eval exited with code $code before finishing" }
 Stop-Transcript | Out-Null
+Pop-Location
 exit $code

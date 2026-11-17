@@ -53,8 +53,9 @@ jobs:
           TIE_MODEL: mockllm/model
           TIE_ROUNDS: "1"
         run: |
-          & .\scripts\windows\run_eval.ps1
-          Get-Content scripts\windows\STATUS.txt
-          if ((Get-Content scripts\windows\STATUS.txt -Tail 1) -notmatch '  DONE') { exit 1 }
-          Get-Content scripts\windows\results\RESULTS.md
-          if (-not (Select-String -Path scripts\windows\results\RESULTS.md -Pattern '- mockllm/model: 1 round(s)' -SimpleMatch -Quiet)) { exit 1 }
+          $dir = Join-Path $env:GITHUB_WORKSPACE "scripts\windows"
+          & "$dir\run_eval.ps1"
+          if ((Get-Location).Path -ne $env:GITHUB_WORKSPACE) { throw "the script changed the caller's directory" }
+          Get-Content "$dir\STATUS.txt"
+          if ((Get-Content "$dir\STATUS.txt" -Tail 1) -notmatch '  DONE') { exit 1 }
+          if (-not (Select-String -Path "$dir\results\RESULTS.md" -Pattern '- mockllm/model: 1 round(s)' -SimpleMatch -Quiet)) { exit 1 }
