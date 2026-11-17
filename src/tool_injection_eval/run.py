@@ -115,33 +115,41 @@ def is_daily_quota(text: str) -> bool:
 
 
 def probe(model: str) -> str:
-    """Send one tiny request. Returns 'ok', 'daily-quota', 'rate-limited' or an error.
+    """Send one tiny request and classify the answer.
 
-    Only Google models are probed. Other providers report 'ok' and any problem
-    surfaces in the first run instead.
+    Returns 'ok'; 'daily-quota' (waiting minutes will not help); 'rate-limited' (a
+    per-minute limit that outlasted a few waits); 'unavailable' (the model stayed
+    overloaded or down through a few waits); or 'error ...' for anything else, such
+    as a rejected key or an unknown model. Only Google models are probed: other
+    providers report 'ok', and any problem surfaces in the first run instead.
     """
     if not model.startswith("google/"):
         return "ok"
     from google import genai
     from google.genai import errors
 
+    verdict = "ok"
     with genai.Client() as client:
         for attempt in range(PROBE_ATTEMPTS):
+            if attempt:
+                time.sleep(PROBE_WAIT)  # let a per-minute window or a load spike pass
             try:
                 client.models.generate_content(
                     model=model.removeprefix("google/"), contents="Reply with the single word OK."
                 )
                 return "ok"
             except errors.APIError as exc:
-                if exc.code != 429:
+                if exc.code == 429:
+                    if is_daily_quota(str(exc)):
+                        return "daily-quota"
+                    verdict = "rate-limited"
+                elif exc.code is not None and exc.code >= 500:
+                    verdict = "unavailable"  # e.g. 503 "experiencing high demand"
+                else:
                     return f"error {exc}"[:400]
-                if is_daily_quota(str(exc)):
-                    return "daily-quota"
             except Exception as exc:  # network trouble and the like
                 return f"error {type(exc).__name__}: {exc}"[:400]
-            if attempt + 1 < PROBE_ATTEMPTS:
-                time.sleep(PROBE_WAIT)  # a per-minute limit: wait for the window to pass
-    return "rate-limited"
+    return verdict
 
 
 # --- reading logs ------------------------------------------------------------

@@ -58,8 +58,9 @@ def quota_error(quota_id: str) -> dict:
 
 
 class FakeGemini(BaseHTTPRequestHandler):
-    # model name -> (status, body) for generateContent
-    replies: dict[str, tuple[int, dict]] = {}
+    # model name -> (status, body) for generateContent, or a list of them to
+    # answer successive requests (the last one repeats)
+    replies: dict[str, tuple[int, dict] | list[tuple[int, dict]]] = {}
     calls: list[str] = []
 
     def _send(self, status: int, body: dict) -> None:
@@ -79,7 +80,10 @@ class FakeGemini(BaseHTTPRequestHandler):
         self.rfile.read(int(self.headers.get("Content-Length", 0)))
         model = self.path.split("/models/")[1].split(":")[0]
         ok = {"candidates": [{"content": {"role": "model", "parts": [{"text": "OK"}]}}]}
-        self._send(*self.replies.get(model, (200, ok)))
+        reply = self.replies.get(model, (200, ok))
+        if isinstance(reply, list):
+            reply = reply.pop(0) if len(reply) > 1 else reply[0]
+        self._send(*reply)
 
     def log_message(self, *args: object) -> None:
         pass
@@ -127,3 +131,26 @@ def test_probe_reports_a_rejected_key(fake_gemini):
     error = {"error": {"code": 400, "message": "API key not valid.", "status": "INVALID_ARGUMENT"}}
     fake_gemini.replies["gemini-3.10-flash"] = (400, error)
     assert run.probe("google/gemini-3.10-flash").startswith("error 400")
+
+
+BUSY = {
+    "error": {
+        "code": 503,
+        "message": "This model is currently experiencing high demand.",
+        "status": "UNAVAILABLE",
+    }
+}
+OK = {"candidates": [{"content": {"role": "model", "parts": [{"text": "OK"}]}}]}
+
+
+def test_probe_waits_out_a_load_spike(fake_gemini):
+    # A 503 "high demand" is temporary: it must not make the runner drop the model.
+    fake_gemini.replies["gemini-3.10-flash"] = [(503, BUSY), (503, BUSY), (200, OK)]
+    assert run.probe("google/gemini-3.10-flash") == "ok"
+
+
+def test_probe_reports_a_model_that_stays_unavailable(fake_gemini):
+    fake_gemini.replies["gemini-3.10-flash"] = (503, BUSY)
+    assert run.probe("google/gemini-3.10-flash") == "unavailable"
+    posts = [call for call in fake_gemini.calls if call.startswith("POST")]
+    assert len(posts) == run.PROBE_ATTEMPTS
