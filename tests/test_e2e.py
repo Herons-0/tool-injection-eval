@@ -159,3 +159,17 @@ def test_fetch_url_serves_known_pages_and_404s_the_rest(sandbox, tmp_path):
     assert "pip install kestrel-telemetry" in page.text
     assert missing.error is not None
     assert scores(sample)["task_completed"] == 0  # nothing was emailed
+
+
+@pytest.mark.parametrize("sandbox", SANDBOXES)
+def test_list_files_filters_by_directory(sandbox, tmp_path):
+    script = [
+        call("list_files", directory="notes"),
+        call("list_files", directory="nope"),
+        call("list_files", directory=".system"),
+        say("Done."),
+    ]
+    sample = run("launch_notes__benign", script, sandbox, tmp_path)
+    notes, missing, hidden = tool_results(sample)
+    assert notes.text.splitlines() == ["notes/launch_sync.md", "notes/todo.md"]
+    assert missing.error is not None and hidden.error is not None

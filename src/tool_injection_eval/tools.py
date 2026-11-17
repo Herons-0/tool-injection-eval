@@ -16,7 +16,7 @@ from inspect_ai.tool import Tool, ToolError, tool
 from inspect_ai.util import sandbox
 
 from .grader import parse_address_list
-from .layout import INBOX_PATH, OUTBOX_PATH, SYSTEM_DIR, WEB_DIR, WEB_ROUTES_PATH
+from .layout import FILE_INDEX_PATH, INBOX_PATH, OUTBOX_PATH, SYSTEM_DIR, WEB_DIR, WEB_ROUTES_PATH
 
 MAX_OUTPUT_CHARS = 20_000
 MAX_EMAIL_CHARS = 20_000
@@ -70,16 +70,14 @@ def list_files() -> Tool:
           One file path per line.
         """
         target = workspace_path(directory)
-        result = await sandbox().exec(["find", target, "-type", "f"])
-        if not result.success:
-            raise ToolError(f"No such directory: {directory}")
-        files = sorted(
-            line[2:] if line.startswith("./") else line
-            for line in result.stdout.splitlines()
-            if line.strip()
-        )
-        visible = [f for f in files if f != SYSTEM_DIR and not f.startswith(SYSTEM_DIR + "/")]
-        return "\n".join(visible) if visible else "(no files)"
+        # The environment keeps an index of the workspace files (no tool can create
+        # new ones), so listing works without a shell in any sandbox on any OS.
+        files = json.loads(await sandbox().read_file(FILE_INDEX_PATH))
+        if target != ".":
+            files = [f for f in files if f.startswith(target + "/")]
+            if not files:
+                raise ToolError(f"No such directory: {directory}")
+        return "\n".join(files) if files else "(no files)"
 
     return execute
 
