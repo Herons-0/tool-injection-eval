@@ -46,8 +46,13 @@ CONNECTIONS = AdaptiveConcurrency(min=1, start=4, max=8)
 # Per-minute rate limits clear within a minute or two of backoff. A daily quota
 # never clears, so give up on a request after about three minutes of retries.
 MAX_RETRIES = 6
+# Abandon (and retry) any single API request that hangs for this many seconds.
+ATTEMPT_TIMEOUT = 180
 # Stop a run early once a few samples have failed, because the rest would fail too.
 FAIL_AFTER = 3
+# A probe that meets a per-minute limit waits for the window to pass, a few times.
+PROBE_ATTEMPTS = 4
+PROBE_WAIT = 65.0
 
 
 class Status:
@@ -82,11 +87,14 @@ def newest(names: list[str], kind: str) -> str | None:
 def gemini_models() -> list[str]:
     from google import genai
 
-    names = [
-        (m.name or "").removeprefix("models/")
-        for m in genai.Client().models.list()
-        if "generateContent" in (m.supported_actions or [])
-    ]
+    # Keep the client open while the listing pages through: a client that is only
+    # used inline is garbage-collected, and closed, before the first request.
+    with genai.Client() as client:
+        names = [
+            (m.name or "").removeprefix("models/")
+            for m in client.models.list()
+            if "generateContent" in (m.supported_actions or [])
+        ]
     picks = [newest(names, "flash"), newest(names, "flash-lite")]
     models = [f"google/{name}" for name in picks if name]
     if not models:
@@ -95,8 +103,15 @@ def gemini_models() -> list[str]:
 
 
 def is_daily_quota(text: str) -> bool:
-    """True for a 429 caused by a per-day quota (it will not clear by waiting minutes)."""
-    return "PerDay" in text or "per day" in text.lower()
+    """True for a 429 that waiting minutes will not clear.
+
+    That is a per-day quota, or a quota of zero: a model this key's tier cannot use.
+    """
+    return (
+        "PerDay" in text
+        or "per day" in text.lower()
+        or re.search(r"""['"]?limit['"]?\s*[:=]\s*['"]?0\b""", text) is not None
+    )
 
 
 def probe(model: str) -> str:
@@ -110,21 +125,22 @@ def probe(model: str) -> str:
     from google import genai
     from google.genai import errors
 
-    for attempt in range(4):
-        try:
-            genai.Client().models.generate_content(
-                model=model.removeprefix("google/"), contents="Reply with the single word OK."
-            )
-            return "ok"
-        except errors.APIError as exc:
-            if exc.code != 429:
-                return f"error {exc}"[:400]
-            if is_daily_quota(str(exc)):
-                return "daily-quota"
-        except Exception as exc:  # network trouble and the like
-            return f"error {type(exc).__name__}: {exc}"[:400]
-        if attempt < 3:
-            time.sleep(65)  # a per-minute limit: wait for the window to pass
+    with genai.Client() as client:
+        for attempt in range(PROBE_ATTEMPTS):
+            try:
+                client.models.generate_content(
+                    model=model.removeprefix("google/"), contents="Reply with the single word OK."
+                )
+                return "ok"
+            except errors.APIError as exc:
+                if exc.code != 429:
+                    return f"error {exc}"[:400]
+                if is_daily_quota(str(exc)):
+                    return "daily-quota"
+            except Exception as exc:  # network trouble and the like
+                return f"error {type(exc).__name__}: {exc}"[:400]
+            if attempt + 1 < PROBE_ATTEMPTS:
+                time.sleep(PROBE_WAIT)  # a per-minute limit: wait for the window to pass
     return "rate-limited"
 
 
@@ -243,6 +259,7 @@ def run_model(
                     fail_on_error=FAIL_AFTER,
                     retry_on_error=1,
                     max_retries=MAX_RETRIES,
+                    attempt_timeout=ATTEMPT_TIMEOUT,
                     adaptive_connections=CONNECTIONS,
                     metadata={"round": number},
                     tags=[f"round-{number}"],
@@ -285,20 +302,29 @@ def run_rounds(
         verdict = check(name)
         if verdict == "ok" or verdict == "rate-limited":
             status(f"Model: {name} (sandbox: {sandbox}, {rounds} round(s))")
-            verdict = run_model(
-                model,
-                rounds,
-                out,
-                sandbox=sandbox,
-                display=display,
-                check=check,
-                status=status,
-            )
+            try:
+                verdict = run_model(
+                    model,
+                    rounds,
+                    out,
+                    sandbox=sandbox,
+                    display=display,
+                    check=check,
+                    status=status,
+                )
+            except RuntimeError as exc:
+                if not fallback or rounds_finished(log_dir, name):
+                    raise
+                status(f"{name} failed ({exc}). Switching to {fallback}")
+                continue
             if verdict == "done":
                 outcome = "done"
                 break
         elif verdict != "daily-quota":
-            raise RuntimeError(f"{name} cannot be used: {verdict}")
+            if not fallback:
+                raise RuntimeError(f"{name} cannot be used: {verdict}")
+            status(f"{name} cannot be used ({verdict}). Switching to {fallback}")
+            continue
         # Daily quota reached. Fall back only if this model has nothing to show yet.
         done = rounds_finished(log_dir, name)
         if done == 0 and fallback:

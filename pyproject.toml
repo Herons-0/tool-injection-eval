@@ -17,7 +17,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+# The Gemini SDK: Inspect's google provider and the runner's model choice use it.
+gemini = ["google-genai>=1.50"]
+dev = ["pytest>=8", "ruff>=0.6", "google-genai>=1.50"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

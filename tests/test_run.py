@@ -54,6 +54,10 @@ def test_daily_quota_is_told_apart_from_a_per_minute_limit():
     minute = "429 RESOURCE_EXHAUSTED. quotaId: GenerateRequestsPerMinutePerProjectPerModel-FreeTier"
     assert is_daily_quota(daily)
     assert not is_daily_quota(minute)
+    # A quota of zero means this key's tier cannot use the model at all.
+    assert is_daily_quota("Quota exceeded for metric: ..._free_tier_requests, limit: 0, model: x")
+    assert is_daily_quota('{"quotaValue": "0", "limit": 0}')
+    assert not is_daily_quota("limit: 10, model: x")
 
 
 def test_rounds_resume_and_never_count_unfinished_runs(tmp_path: Path):
@@ -98,3 +102,13 @@ def test_stops_cleanly_when_no_model_has_quota(tmp_path: Path):
     assert outcome == "nothing"
     results = (tmp_path / "results" / "RESULTS.md").read_text(encoding="utf-8")
     assert "No tool_injection logs found." in results
+
+
+def test_falls_back_when_the_first_model_cannot_be_used(tmp_path: Path):
+    def check(model: str) -> str:
+        return "error 404 NOT_FOUND" if model == "mockllm/flash" else "ok"
+
+    lite = quiet_model("mockllm/flash-lite")
+    outcome = run_rounds(["mockllm/flash", lite], 1, tmp_path, display="none", check=check)
+    assert outcome == "done"
+    assert "mockllm/flash cannot be used (error 404" in (tmp_path / "STATUS.txt").read_text()
