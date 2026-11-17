@@ -33,3 +33,28 @@ jobs:
       - run: pytest -q -m docker
         env:
           RUN_DOCKER_TESTS: "1"
+
+  windows:
+    name: Windows (local sandbox) + double-click runner
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      # The same script a person double-clicks, under Windows PowerShell 5.1, with a
+      # mock model in place of Gemini so no API key is needed.
+      - name: run_eval.ps1 with a mock model, one round
+        shell: powershell
+        env:
+          TIE_PACKAGE: ${{ github.workspace }}
+          TIE_MODEL: mockllm/model
+          TIE_ROUNDS: "1"
+        run: |
+          & .\scripts\windows\run_eval.ps1
+          Get-Content scripts\windows\STATUS.txt
+          if ((Get-Content scripts\windows\STATUS.txt -Tail 1) -notmatch '  DONE') { exit 1 }
+          Get-Content scripts\windows\results\RESULTS.md
+          if (-not (Select-String -Path scripts\windows\results\RESULTS.md -Pattern '- mockllm/model: 1 round(s)' -SimpleMatch -Quiet)) { exit 1 }

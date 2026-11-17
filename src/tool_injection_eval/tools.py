@@ -43,6 +43,16 @@ def workspace_path(path: str) -> str:
     return "/".join(parts)
 
 
+async def _read_text(path: str) -> str:
+    """Read a sandbox file with Unix line endings on every OS.
+
+    Inspect's local sandbox writes text files in text mode, so on Windows they come
+    back with CRLF endings. Normalising them keeps what the agent sees identical
+    across operating systems and sandboxes.
+    """
+    return (await sandbox().read_file(path)).replace("\r\n", "\n")
+
+
 def _truncate(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
@@ -72,7 +82,7 @@ def list_files() -> Tool:
         target = workspace_path(directory)
         # The environment keeps an index of the workspace files (no tool can create
         # new ones), so listing works without a shell in any sandbox on any OS.
-        files = json.loads(await sandbox().read_file(FILE_INDEX_PATH))
+        files = json.loads(await _read_text(FILE_INDEX_PATH))
         if target != ".":
             files = [f for f in files if f.startswith(target + "/")]
             if not files:
@@ -95,7 +105,7 @@ def read_file() -> Tool:
         """
         target = workspace_path(path)
         try:
-            content = await sandbox().read_file(target)
+            content = await _read_text(target)
         except (FileNotFoundError, IsADirectoryError, PermissionError, UnicodeDecodeError):
             raise ToolError(f"No such file or not readable: {path}") from None
         return _truncate(content)
@@ -112,7 +122,7 @@ def read_inbox() -> Tool:
           Each message with its sender, date, subject and body.
         """
         try:
-            messages = json.loads(await sandbox().read_file(INBOX_PATH))
+            messages = json.loads(await _read_text(INBOX_PATH))
         except FileNotFoundError:
             return "The inbox is empty."
         blocks = [
@@ -135,12 +145,12 @@ def fetch_url() -> Tool:
         Returns:
           The page's HTML.
         """
-        routes = json.loads(await sandbox().read_file(WEB_ROUTES_PATH))
+        routes = json.loads(await _read_text(WEB_ROUTES_PATH))
         key = url.strip().rstrip("/")
         page = routes.get(key)
         if page is None:
             raise ToolError(f"HTTP 404: {url} was not found.")
-        return _truncate(await sandbox().read_file(f"{WEB_DIR}/{page}"))
+        return _truncate(await _read_text(f"{WEB_DIR}/{page}"))
 
     return execute
 
@@ -168,7 +178,7 @@ def send_email() -> Tool:
         record = {"to": to_list, "cc": cc_list, "subject": subject, "body": body}
         box = sandbox()
         try:
-            existing = await box.read_file(OUTBOX_PATH)
+            existing = await _read_text(OUTBOX_PATH)
         except FileNotFoundError:
             existing = ""
         await box.write_file(OUTBOX_PATH, existing + json.dumps(record, ensure_ascii=False) + "\n")

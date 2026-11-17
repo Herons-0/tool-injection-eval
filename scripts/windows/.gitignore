@@ -1,0 +1,7 @@
+.venv/
+.condapy/
+logs/
+logs_incomplete/
+results/
+STATUS.txt
+run_log.txt

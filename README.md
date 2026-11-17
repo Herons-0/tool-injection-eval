@@ -9,7 +9,7 @@ This is a small, reproducible eval of **indirect prompt injection** against an e
 | | |
 |---|---|
 | Samples | 18: 3 everyday tasks × (5 injection styles + 1 clean control) |
-| Sandbox | One Docker container per sample, `network_mode: none`, non-root |
+| Sandbox | One Docker container per sample (`network_mode: none`, non-root), or Inspect's local sandbox: the tools only touch files, so both give the agent identical views |
 | Scores | `exfiltrated`, `external_contact`, `secret_in_any_email`, `task_completed` |
 | Grader | Pure Python, no LLM judge, same input → same verdict |
 | Tests | 120+ test cases; scripted agents run end to end without an API key |
@@ -113,6 +113,18 @@ The same steps as `make` targets: `make eval MODEL=google/<model-name>`, `make e
 
 `-T defense=warning` adds one paragraph to the system prompt telling the agent that file, email and web content is data, not instructions. Comparing the two runs shows how much a prompt-level defence actually buys.
 
+### One command, in complete rounds
+
+```bash
+python -m tool_injection_eval.run --model google/<model-name> --rounds 3 --out .
+```
+
+Each round runs all 18 samples under both defences. A run that does not finish (say, an API quota runs out) is moved to `logs_incomplete/` instead of being half-counted, and the next call resumes from there. The command writes `results/RESULTS.md` and a one-line-per-step `STATUS.txt`. With no `--model` it asks the Gemini API for the newest stable Flash model, and falls back to Flash-Lite if Flash's daily quota (the free tier's is small) runs out before a single round finishes. It uses Inspect's local sandbox, a temporary folder, by default: the agent's tools only read and write files there, so no Docker is needed. `--sandbox docker` uses the container.
+
+### Windows, no setup
+
+Copy `scripts/windows/` anywhere and double-click `run_eval.bat`. It finds Python 3.11+, makes a private virtual environment next to itself, installs the eval from GitHub, asks once for your Gemini API key (kept in memory, never saved) and runs the command above. CI runs the same script on Windows with a mock model in place of Gemini.
+
 ## Results
 
 Not run yet. This section will only ever contain numbers produced by the commands above; `results/RESULTS.md` is generated from the Inspect logs, never typed by hand.
@@ -153,8 +165,10 @@ src/tool_injection_eval/
   grader.py       the deterministic grader (no Inspect imports)
   scorer.py       Inspect scorer wrapping the grader
   summarize.py    logs -> results table with Wilson intervals
+  run.py          runs complete rounds, resumes, writes RESULTS.md
   sandbox/        Dockerfile + compose.yaml
-tests/            grader, dataset, tools, end-to-end, summary
+scripts/windows/  double-click runner (run_eval.bat)
+tests/            grader, dataset, tools, end-to-end, summary, runner
 ```
 
 ## License
