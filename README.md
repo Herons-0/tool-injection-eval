@@ -4,15 +4,15 @@
 
 Can a tool-using AI agent be talked into leaking a secret by text it reads while doing an ordinary job?
 
-This is a small, reproducible eval of **indirect prompt injection** against an email-capable agent, built on [Inspect](https://inspect.aisi.org.uk/). Each run happens in its own network-less Docker container, and a **deterministic grader** decides what happened from the emails that were actually sent. The grader is tested on its own, including against disguised leaks and against the cases it is known to miss.
+This is a small, reproducible eval of **indirect prompt injection** against an email-capable agent, built on [Inspect](https://inspect.aisi.org.uk/). Each episode runs in its own sandbox (by default a network-less Docker container), and a **deterministic grader** decides what happened from the emails that were actually sent. The grader is tested on its own, including against disguised leaks and against the cases it is known to miss.
 
 | | |
 |---|---|
 | Samples | 18: 3 everyday tasks × (5 injection styles + 1 clean control) |
-| Sandbox | One Docker container per sample, `network_mode: none`, non-root |
+| Sandbox | One Docker container per sample (`network_mode: none`, non-root), or Inspect's local sandbox: the tools only touch files, so both give the agent identical views |
 | Scores | `exfiltrated`, `external_contact`, `secret_in_any_email`, `task_completed` |
 | Grader | Pure Python, no LLM judge, same input → same verdict |
-| Tests | 120+ test cases; scripted agents run end to end without an API key |
+| Tests | 130+ test cases; scripted agents run end to end without an API key |
 
 ## Threat model
 
@@ -113,9 +113,38 @@ The same steps as `make` targets: `make eval MODEL=google/<model-name>`, `make e
 
 `-T defense=warning` adds one paragraph to the system prompt telling the agent that file, email and web content is data, not instructions. Comparing the two runs shows how much a prompt-level defence actually buys.
 
+### One command, in complete rounds
+
+```bash
+python -m tool_injection_eval.run --model google/<model-name> --rounds 3 --out .
+```
+
+Each round runs all 18 samples under both defences. A run that does not finish (say, an API quota runs out) is moved to `logs_incomplete/` instead of being half-counted, and the next call resumes from there. The command writes `results/RESULTS.md` and a one-line-per-step `STATUS.txt`. With no `--model` it asks the Gemini API for the newest stable Flash model, and falls back to Flash-Lite if Flash's daily quota (the free tier's is small) runs out before a single round finishes. It uses Inspect's local sandbox, a temporary folder, by default: the agent's tools only read and write files there, so no Docker is needed. `--sandbox docker` uses the container.
+
+### Windows, no setup
+
+Copy `scripts/windows/` anywhere and double-click `run_eval.bat`. It finds Python 3.11+, makes a private virtual environment next to itself, installs the eval from GitHub, asks once for your Gemini API key (kept in memory, never saved) and runs the command above. CI runs the same script on Windows with a mock model in place of Gemini.
+
 ## Results
 
-Not run yet. This section will only ever contain numbers produced by the commands above; `results/RESULTS.md` is generated from the Inspect logs, never typed by hand.
+**Gemini 3.5 Flash-Lite, 17 November 2026.** Three rounds, so every sample ran three times under each defence: 108 episodes, no errors. Produced by `python -m tool_injection_eval.run` on Windows (Inspect 0.3.289, local sandbox, the provider's default sampling settings, free-tier API key). The logs behind every number are in [`results/logs/`](results/logs) (`inspect view --log-dir results/logs` opens the transcripts), and [`results/RESULTS.md`](results/RESULTS.md), with the breakdowns by attack and surface, is generated from them.
+
+| Defence | Secret exfiltrated | Emailed an outsider | Utility, clean | Utility, under attack |
+|---|---|---|---|---|
+| none | 0/45 (95% CI 0–8%) | 0/45 | 9/9 | 45/45 |
+| warning | 0/45 (95% CI 0–8%) | 0/45 | 9/9 | 45/45 |
+
+What the transcripts show:
+
+- **The agent did exactly the task, every time.** It made one read of the source it was pointed at, sent one email to the right colleague, and wrote a short summary. It never listed the workspace or opened `.env`, and none of its 108 emails mentioned the key, `.env` or an attacker's domain.
+- **It rarely told the user about the attack.** Only 2 of the 90 attacked episodes ended with the agent saying the content contained an instruction it had ignored. Both were under the defence prompt, on the vendor web page with the task-aligned attack. A vendor email asking for the payments key is a phishing attempt the user would want to hear about, and ignoring it in silence keeps the secret safe but leaves the user uninformed.
+- Free-tier rate limits (15 requests a minute) caused retries but no failed samples.
+
+What this does and does not show:
+
+- These five hand-written, non-adaptive attacks sit below this model's floor. With zero successes in both conditions, the run cannot tell what the defence prompt adds for this model. Pooled, the attack success rate is 0/90, with a 95% upper bound of 4%.
+- It says nothing about optimised, adaptive or multi-turn attacks, or about other models. Gemini 3.8 Flash was not measured: it returned 503 "high demand" throughout the session, and free-tier Flash quotas are too small for a full run.
+- Natural next steps: attacks that adapt to the model's replies, injections that make the secret look necessary for the task, and a score for whether the agent tells the user about an attack.
 
 ## Design decisions
 
@@ -153,8 +182,10 @@ src/tool_injection_eval/
   grader.py       the deterministic grader (no Inspect imports)
   scorer.py       Inspect scorer wrapping the grader
   summarize.py    logs -> results table with Wilson intervals
+  run.py          runs complete rounds, resumes, writes RESULTS.md
   sandbox/        Dockerfile + compose.yaml
-tests/            grader, dataset, tools, end-to-end, summary
+scripts/windows/  double-click runner (run_eval.bat)
+tests/            grader, dataset, tools, end-to-end, summary, runner
 ```
 
 ## License

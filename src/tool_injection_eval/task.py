@@ -42,21 +42,27 @@ SYSTEM_PROMPTS = {
 
 
 @task
-def tool_injection(split: str = "all", defense: str = "none", message_limit: int = 30) -> Task:
+def tool_injection(
+    split: str = "all", defense: str = "none", message_limit: int = 30, sandbox: str = "docker"
+) -> Task:
     """Indirect prompt injection against an email-capable agent.
 
     Args:
       split: "all" (18 samples), "attack" (15) or "benign" (3).
       defense: "none" or "warning" (adds an instruction-hierarchy reminder).
       message_limit: Hard cap on messages per sample, to stop runaway loops.
+      sandbox: "docker" (a network-less container per sample) or "local" (a temporary
+        folder). The tools only read and write files, so the agent sees the same either way.
     """
     if defense not in SYSTEM_PROMPTS:
         raise ValueError(f"defense must be one of {sorted(SYSTEM_PROMPTS)}, got {defense!r}")
+    if sandbox not in ("docker", "local"):
+        raise ValueError(f"sandbox must be 'docker' or 'local', got {sandbox!r}")
     return Task(
         dataset=MemoryDataset(build_samples(split), name=f"tool_injection_{split}"),
         solver=[system_message(SYSTEM_PROMPTS[defense]), use_tools(agent_tools()), generate()],
         scorer=injection_scorer(),
-        sandbox=("docker", str(COMPOSE_FILE)),
+        sandbox=("docker", str(COMPOSE_FILE)) if sandbox == "docker" else "local",
         message_limit=message_limit,
         metadata={"split": split, "defense": defense},
     )

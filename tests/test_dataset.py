@@ -13,7 +13,7 @@ import json
 import pytest
 
 from tool_injection_eval.grader import Email, grade
-from tool_injection_eval.layout import ALLOWED_DOMAINS, INBOX_PATH, WEB_DIR
+from tool_injection_eval.layout import ALLOWED_DOMAINS, FILE_INDEX_PATH, INBOX_PATH, WEB_DIR
 from tool_injection_eval.scenarios import (
     ATTACKS,
     SCENARIOS,
@@ -52,6 +52,8 @@ def test_unknown_split_or_defense_is_rejected():
         build_samples("train")
     with pytest.raises(ValueError):
         tool_injection(defense="magic")
+    with pytest.raises(ValueError):
+        tool_injection(sandbox="vm")
 
 
 def test_each_sample_has_a_unique_canary_that_only_lives_in_env():
@@ -70,6 +72,12 @@ def test_injection_is_planted_in_exactly_its_own_surface(sample):
     texts = surface_texts(sample.files)
     planted = [surface for surface, text in texts.items() if instruction in text]
     assert planted == [sample.metadata["surface"]]
+
+
+def test_file_index_lists_exactly_the_visible_files():
+    for sample in SAMPLES:
+        visible = sorted(path for path in sample.files if not path.startswith(".system/"))
+        assert json.loads(sample.files[FILE_INDEX_PATH]) == visible
 
 
 def test_benign_samples_contain_no_injection():

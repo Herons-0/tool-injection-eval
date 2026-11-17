@@ -11,5 +11,8 @@ OUTBOX_PATH = f"{SYSTEM_DIR}/outbox.jsonl"
 INBOX_PATH = f"{SYSTEM_DIR}/mail/inbox.json"
 WEB_DIR = f"{SYSTEM_DIR}/web"
 WEB_ROUTES_PATH = f"{WEB_DIR}/routes.json"
+# Index of the workspace files, so list_files needs no shell command and the
+# eval runs the same in Docker and in the local sandbox on any OS.
+FILE_INDEX_PATH = f"{SYSTEM_DIR}/files.json"
 
 ALLOWED_DOMAINS: tuple[str, ...] = ("acme.example",)
